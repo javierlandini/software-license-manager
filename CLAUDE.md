@@ -1,3 +1,131 @@
+# Software License Manager
+
+Laravel backend to sell and manage software licenses: product/plan catalog, license issuing,
+per-machine activation control (seats), payment orders, and a per-license audit log.
+
+**Current state:** only the data layer exists (models, enums, migrations, factories, seeder,
+schema tests). No business routes, controllers, API, authentication or payment gateway yet.
+The product is a **pure JSON API** consumed by the client software; an admin panel is planned
+but its technology is undecided — don't add a UI stack without asking.
+`bootstrap/app.php` already renders JSON errors for `api/*`; `routes/api.php` does not exist yet.
+
+## Domain model
+
+```
+Product 1─* Plan 1─* License 1─* Activation
+              │         ├─* LicenseEvent (append-only)
+              └─* Order *─1 (License, optional)
+User (role: admin | support | customer) 1─* License, 1─* Order
+```
+
+- **Plan** sets the license type (`LicenseType`: perpetual | subscription | trial), price,
+  `billing_interval` (subscription only), `trial_days`, `updates_months`, `max_activations`.
+- **License**: unique `key` in `XXXXX-XXXXX-XXXXX-XXXXX` format, `status` (`LicenseStatus`),
+  copies `max_activations` from its plan, `expires_at` (null = perpetual), `updates_until`.
+  A trial converted to paid is linked via `converted_from_license_id` (`convertedFrom`/`convertedTo`).
+- **Activation**: one per (license, `machine_fingerprint`). Occupies a seat while
+  `deactivated_at` is null → use `License::activeActivations()`.
+- **LicenseEvent**: append-only audit log (`UPDATED_AT = null`). Null `actor_id` = system event.
+- **Order**: `amount_cents` + `currency`, unique `external_reference` (payment provider id).
+
+Enums live in `app/Enums/` (string-backed): `LicenseType`, `LicenseStatus`, `LicenseEventType`,
+`OrderStatus`, `BillingInterval`, `UserRole`.
+
+## Stack
+
+PHP 8.5 · Laravel 13 · Pest 5 · Pint · Vite 8 + Tailwind 4 · MySQL 8.4 + Redis 8 (Docker) ·
+in-memory SQLite for tests · Laravel Boost (MCP server in `.mcp.json`).
+
+## Commands
+
+Docker is the canonical dev environment (`compose.yaml`: php-fpm `app`, nginx on
+`localhost:8000`, mysql, redis). `.env` points to `DB_HOST=mysql` / `REDIS_HOST=redis`, so
+anything touching the DB or Redis runs **inside the `app` container**. The image has no Node:
+run `npm` on the host.
+
+```bash
+docker compose up -d --build
+docker compose exec app composer install
+docker compose exec app php artisan migrate --seed
+npm install && npm run build                     # host; `npm run dev` for HMR
+```
+
+Tests (in-memory SQLite via `phpunit.xml`, work on host or in the container):
+
+```bash
+php artisan test --compact
+php artisan test --compact tests/Feature/LicenseSchemaTest.php
+php artisan test --compact --filter="license keys must be unique"
+```
+
+Formatting (no `pint.json` → default Laravel preset):
+
+```bash
+vendor/bin/pint --dirty --format agent
+```
+
+CI (`.github/workflows/laravel.yml`) runs only `php artisan test` (PHP 8.5, SQLite) on push/PR
+to `main`. It does **not** run Pint or `npm run build`: check those locally before a PR.
+
+Seeder creates `admin@example.com`, `support@example.com`, 5 customers, 2 products × 4 plans.
+
+## Conventions (deduced from the code)
+
+- Models: `#[Fillable([...])]` / `#[Hidden([...])]` attributes (not `$fillable`), `casts()` method,
+  enum casts, relations with generic PHPDoc (`@return HasMany<License, $this>`).
+- Money is always integer cents (`*_cents`) + `currency` char(3). Never floats.
+- Enums are stored as `string` columns, not DB `enum` types.
+- Foreign-key delete policies are deliberate — follow them in new migrations:
+  `restrictOnDelete` for users/plans referenced by licenses and orders;
+  `cascadeOnDelete` for activations/license_events; `nullOnDelete` for order→license and trial→paid.
+- Factories have one state per business variant (`perpetual()`, `subscription()`, `trial()`,
+  `suspended()`, `expired()`, `paid()`, `admin()`, `deactivated()`…). Use them instead of
+  hand-built attributes.
+- Pest tests in `tests/Feature`, lowercase names describing the rule
+  (`test('a machine can only be activated once per license', …)`), `uses(RefreshDatabase::class)`
+  per file (it is commented out in `tests/Pest.php`).
+- Code, names, comments, commits and docs in English.
+
+## Git
+
+- Branches `feature/<kebab-case>` → PR to `main` → merge commit.
+- Commit messages: imperative, one sentence ending with a period
+  (`Add core models, migrations and factories.`).
+- Never commit or push unless asked.
+
+## Sensitive areas (ask before changing)
+
+- **Migrations**: there is no production data yet (system in development), so editing existing
+  migrations is acceptable for now — but say so explicitly and expect `migrate:fresh`. Once there
+  is a production deploy, only add new migrations.
+- **`LicenseEvent` is append-only**: never update/delete events; record a new one.
+- **`License.key` format** and uniqueness: consumed by third-party client software.
+- **FK / delete policies** (see Conventions): they decide what data gets lost.
+- **Amounts and currency** on `Plan`/`Order`.
+- **Dependencies** (`composer.json`, `package.json`, lockfiles): no additions/upgrades without approval.
+- **The Laravel Boost guidelines block** below: regenerated by `boost:update`; edit outside it and
+  never write its opening tag literally above it (Boost matches from the first occurrence).
+- `compose.yaml`, `docker/`, `.github/workflows/`, `.env` (never commit `.env`).
+
+## Pending chores (approved, not done yet)
+
+- Bump `php` in `composer.json` from `^8.3` to `^8.5` to match Docker and CI.
+- Delete `AGENTS.md`: it only holds obsolete Boost bootstrap instructions.
+
+## Open questions
+
+<!-- Not deducible from the code. Remove each item once answered. -->
+- Admin panel technology (Blade, Livewire, Filament, separate SPA…)?
+- Activation API auth: license key, per-machine token, Sanctum?
+- Expiration: is there a grace period? What moves `status` to `expired` (scheduler)?
+- Does an expired/suspended license free its seats? Can the client deactivate a machine?
+- Trials: on conversion, is the trial `revoked`/`expired`? Are activations carried over?
+- Refund/chargeback: does a `refunded` order revoke or suspend the license?
+- `support` role: what can it do compared to `admin`?
+- Payment provider (Stripe, Paddle, MercadoPago…) and webhooks?
+- Production key generation: today only `LicenseFactory::generateKey()` exists (tests only).
+- Deploy target: Laravel Cloud (`boost.json` has `"cloud": true`)? Environments?
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
