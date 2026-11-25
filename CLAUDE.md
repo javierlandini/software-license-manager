@@ -34,7 +34,7 @@ Enums live in `app/Enums/` (string-backed): `LicenseType`, `LicenseStatus`, `Lic
 ## Stack
 
 PHP 8.5 · Laravel 13 · Pest 5 · Pint · Vite 8 + Tailwind 4 · MySQL 8.4 + Redis 8 (Docker) ·
-in-memory SQLite for tests · Laravel Boost (MCP server in `.mcp.json`).
+in-memory SQLite for tests (plus an `integration` group on real MySQL + Redis) · Laravel Boost (MCP server in `.mcp.json`).
 
 ## Commands
 
@@ -50,12 +50,27 @@ docker compose exec app php artisan migrate --seed
 npm install && npm run build                     # host; `npm run dev` for HMR
 ```
 
-Tests (in-memory SQLite via `phpunit.xml`, work on host or in the container):
+Tests (in-memory SQLite via `phpunit.xml`, work on host or in the container; the `integration`
+group is excluded):
 
 ```bash
 php artisan test --compact
 php artisan test --compact tests/Feature/LicenseSchemaTest.php
 php artisan test --compact --filter="license keys must be unique"
+```
+
+Integration tests (Pest group `integration`, config `phpunit.integration.xml`) run against the
+real MySQL and Redis services, inside the `app` container. They use a separate
+`${DB_DATABASE}_testing` database (created by the `mysql-test-database` compose job on every
+`docker compose up`) and Redis DBs 14/15, so dev data is never touched;
+`tests/integration-bootstrap.php` aborts if `DB_TEST_DATABASE` is missing or doesn't end in
+`_testing`. Mark a test file with `uses(RefreshDatabase::class)->group('integration');` for
+anything that needs MySQL behaviour (`FOR UPDATE`, locks) or Redis. CI runs this group in
+`.github/workflows/integration.yml`.
+
+```bash
+docker compose up -d               # once, creates the test database
+composer test:integration          # host; runs the group inside the app container
 ```
 
 Formatting (no `pint.json` → default Laravel preset):
