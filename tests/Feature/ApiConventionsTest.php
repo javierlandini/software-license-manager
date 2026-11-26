@@ -7,6 +7,14 @@ use Illuminate\Support\Facades\Route;
 
 uses(RefreshDatabase::class);
 
+/*
+ * Assert the production error shape: with debug on (as in a copied `.env.example`), Laravel adds
+ * `exception`, `file`, `line` and `trace` to JSON error bodies.
+ */
+beforeEach(function () {
+    config(['app.debug' => false]);
+});
+
 /**
  * Register a test-only route under the real v1 prefix and middleware group.
  */
