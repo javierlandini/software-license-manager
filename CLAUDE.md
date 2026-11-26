@@ -119,6 +119,23 @@ Seeder creates `admin@example.com`, `support@example.com`, 5 customers, 2 produc
 - Commit messages: imperative, one sentence ending with a period
   (`Add core models, migrations and factories.`).
 - Never commit or push unless asked.
+- Issues use `.github/ISSUE_TEMPLATE/task.md`; PRs follow `.github/pull_request_template.md`. The owner protects `main` in GitHub Settings: merging requires green CI (`laravel-tests`, `integration-tests`, `pint`, `larastan`).
+
+## Labels
+
+Backlog labels (they exist on GitHub; don't create or edit them without asking):
+
+- **Status:** `agent-ready` (self-contained, can be delegated to an agent) · `needs-approval`
+  (touches a protected area; the issue's Approval section authorizes only the listed change) ·
+  `needs-decision` (an open decision must be made and recorded in the PR before or while building).
+- **Size:** `size:S` (an hour or two) · `size:M` (half a day) · `size:L` (a day or more).
+- **Day:** `day:0` foundations · `day:1` domain · `day:2` CRUD, auth and RBAC · `day:3` activation
+  and OpenAPI · `day:4` cache and queues · `day:5` tests, CI and docs · `extra` (optional extra).
+- **Area:** `area:api` HTTP API · `area:domain` domain layer · `area:auth` authentication and
+  authorization · `area:infra` tooling, Docker and CI · `area:cache` caching · `area:queue` queues,
+  jobs and scheduling · `area:docs` documentation.
+- GitHub defaults (`bug`, `enhancement`, `documentation`, `question`, `duplicate`, `invalid`,
+  `wontfix`, `good first issue`, `help wanted`, `accessibility`) keep their usual meaning.
 
 ## Sensitive areas (ask before changing)
 
