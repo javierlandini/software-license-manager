@@ -4,10 +4,11 @@ Laravel backend to sell and manage software licenses: product/plan catalog, lice
 per-machine activation control (seats), payment orders, and a per-license audit log.
 
 **Current state:** only the data layer exists (models, enums, migrations, factories, seeder,
-schema tests). No business routes, controllers, API, authentication or payment gateway yet.
+schema tests). No business endpoints, authentication or payment gateway yet.
 The product is a **pure JSON API** consumed by the client software; an admin panel is planned
 but its technology is undecided — don't add a UI stack without asking.
-`bootstrap/app.php` already renders JSON errors for `api/*`; `routes/api.php` does not exist yet.
+The API v1 skeleton exists (`routes/api.php` under `/api/v1`, `GET /api/v1/ping`, JSON error
+convention); see **API conventions**.
 
 ## Domain model
 
@@ -112,6 +113,31 @@ Seeder creates `admin@example.com`, `support@example.com`, 5 customers, 2 produc
   (`test('a machine can only be activated once per license', …)`), `uses(RefreshDatabase::class)`
   per file (it is commented out in `tests/Pest.php`).
 - Code, names, comments, commits and docs in English.
+
+## API conventions
+
+- **Routing:** `routes/api.php` is registered in `bootstrap/app.php` with `apiPrefix: 'api/v1'`,
+  so every route in it is served under `/api/v1` with the stateless `api` middleware group.
+  Add routes inside the existing `Route::name('api.v1.')` group (names like `api.v1.ping`).
+  Never run `php artisan install:api` (it adds Sanctum). A future v2 gets its own route file.
+- **Controllers:** `app/Http/Controllers/Api/V1`, created with `php artisan make:controller Api/V1/...`.
+  `GET /api/v1/ping` (`PingController`) is the smoke endpoint.
+- **Success bodies:** wrapped in `data` (Eloquent API Resources' default), e.g. `{"data": {...}}`.
+- **Error bodies:** every error under `api/*` is JSON (even without `Accept: application/json`):
+  `{"message": "Human readable.", "code": "machine_readable", "errors": {"field": ["..."]}}`.
+  `errors` appears only on validation errors. Clients must branch on `code`, never on `message`.
+  A `respond()` hook in `bootstrap/app.php` adds `code` when the response has none:
+  - 422 validation → `validation_failed`; 401 → `unauthenticated`;
+  - any other status → snake-cased status text (`not_found`, `forbidden`, `method_not_allowed`,
+    `conflict`, `too_many_requests`, `internal_server_error`…). Unknown routes → 404 `not_found`.
+  - **409 domain conflicts** must render their own stable code (e.g. `machine_already_activated`),
+    which the hook keeps; codes are part of the public contract — never rename one once shipped.
+- **Pagination:** list endpoints return a paginated Eloquent API Resource collection
+  (`Model::query()->paginate($perPage)->toResourceCollection()`), i.e. Laravel's standard
+  `{"data": [...], "links": {first, last, prev, next}, "meta": {current_page, from, last_page,
+  path, per_page, to, total, links}}`. Query params `page` and `per_page`; `per_page` defaults to
+  15 and is validated as `integer|min:1|max:100` (out of range → 422 `validation_failed`).
+- Tests: `tests/Feature/ApiConventionsTest.php` covers the conventions; use `getJson`/`postJson`.
 
 ## Git
 
