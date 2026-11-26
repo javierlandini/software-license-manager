@@ -64,7 +64,20 @@ Formatting (no `pint.json` → default Laravel preset):
 vendor/bin/pint --dirty --format agent
 ```
 
-CI (`.github/workflows/laravel.yml` and `.github/workflows/lint.yml`) does **not** run `npm run build`: check it locally before a PR.
+Quality scripts (Larastan config in `phpstan.neon`, **level 3**, no baseline; analyses `app/`,
+`bootstrap/app.php`, `config/`, `database/`, `routes/` — not `tests/`):
+
+```bash
+composer lint       # Pint, fixes style
+composer analyse    # Larastan
+composer check      # Pint --test + Larastan + tests; run before opening a PR
+```
+
+Raising the level needs code changes first: level 4 flags enum-cast attributes
+(`User::$role`, `Plan::$license_type`) as `string`.
+
+CI (`.github/workflows/`) covers the same steps as `composer check` as separate jobs (tests, Pint,
+Larastan) but does **not** run `npm run build`: check it locally before a PR.
 
 Seeder creates `admin@example.com`, `support@example.com`, 5 customers, 2 products × 4 plans.
 
