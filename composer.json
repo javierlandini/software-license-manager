@@ -54,6 +54,10 @@
             "@php artisan config:clear --ansi @no_additional_args",
             "@php artisan test"
         ],
+        "test:integration": [
+            "docker compose exec -T app php artisan config:clear --ansi @no_additional_args",
+            "docker compose exec -T app vendor/bin/pest --configuration=phpunit.integration.xml --colors=always"
+        ],
         "lint": "pint",
         "analyse": "phpstan analyse --memory-limit=1G",
         "check": [

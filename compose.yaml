@@ -9,9 +9,14 @@ services:
         restart: unless-stopped
         volumes:
             - ./:/var/www/html
+        environment:
+            # Read only by the integration test mode (tests/integration-bootstrap.php).
+            DB_TEST_DATABASE: ${DB_DATABASE}_testing
         depends_on:
             mysql:
                 condition: service_healthy
+            mysql-test-database:
+                condition: service_completed_successfully
             redis:
                 condition: service_healthy
 
@@ -43,6 +48,24 @@ services:
             interval: 5s
             timeout: 5s
             retries: 20
+
+    # One-shot job, run on every `docker compose up`: makes sure the integration test
+    # database exists (also on an existing mysql-data volume) and that the app user can use it.
+    mysql-test-database:
+        image: mysql:8.4
+        restart: "no"
+        depends_on:
+            mysql:
+                condition: service_healthy
+        environment:
+            MYSQL_PWD: ${DB_ROOT_PASSWORD:-root}
+        # On a fresh volume the healthcheck can pass on MySQL's temporary init server (no TCP),
+        # so wait until it accepts TCP connections before creating the database.
+        entrypoint: ["sh", "-c"]
+        command:
+            - |
+                for attempt in $$(seq 60); do mysqladmin ping --host=mysql --user=root --silent && break; sleep 1; done
+                mysql --host=mysql --user=root --execute="CREATE DATABASE IF NOT EXISTS \`${DB_DATABASE}_testing\`; GRANT ALL PRIVILEGES ON \`${DB_DATABASE}_testing\`.* TO '${DB_USERNAME}'@'%';"
 
     redis:
         image: redis:8-alpine
